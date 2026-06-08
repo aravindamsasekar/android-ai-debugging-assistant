@@ -1,0 +1,5 @@
+W/AuthRepository: Login request failed
+java.net.SocketTimeoutException: timeout
+    at okhttp3.internal.http2.Http2Stream$StreamTimeout.newTimeoutException(Http2Stream.kt:675)
+    at com.example.auth.AuthRepository.login(AuthRepository.kt:42)
+    at com.example.login.LoginViewModel.submitLogin(LoginViewModel.kt:89)

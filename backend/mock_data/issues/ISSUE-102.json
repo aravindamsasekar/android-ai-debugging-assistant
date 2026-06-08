@@ -1,0 +1,10 @@
+{
+  "issueId": "ISSUE-102",
+  "title": "Login fails when network is slow",
+  "description": "Login screen keeps loading and then shows generic error",
+  "expectedRootCause": "Network timeout is not mapped to a user-friendly error state",
+  "relevantFiles": ["LoginViewModel.kt", "AuthRepository.kt"],
+  "suggestedFix": "Catch timeout exception and update UI state with retryable error",
+  "patchSuggestion": "emit LoginUiState.Error(\"Network timeout. Please try again.\")",
+  "confidence": "Medium"
+}

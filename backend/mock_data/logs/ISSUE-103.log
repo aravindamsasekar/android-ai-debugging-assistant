@@ -1,0 +1,4 @@
+E/AppDatabase: Failed to open database
+java.lang.IllegalStateException: A migration from 1 to 2 was required but not found. Please provide the necessary Migration path via RoomDatabase.Builder.addMigration(...)
+    at androidx.room.RoomOpenHelper.onUpgrade(RoomOpenHelper.kt:109)
+    at com.example.database.AppDatabase$Companion.build(AppDatabase.kt:31)

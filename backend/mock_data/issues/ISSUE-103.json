@@ -1,0 +1,10 @@
+{
+  "issueId": "ISSUE-103",
+  "title": "App crashes after database version update",
+  "description": "Crash happens immediately after app upgrade",
+  "expectedRootCause": "Room database version changed without migration",
+  "relevantFiles": ["AppDatabase.kt", "DatabaseModule.kt"],
+  "suggestedFix": "Add Room migration or fallback strategy",
+  "patchSuggestion": "addMigrations(MIGRATION_1_2)",
+  "confidence": "High"
+}

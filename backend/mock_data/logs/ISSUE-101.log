@@ -1,0 +1,6 @@
+FATAL EXCEPTION: main
+Process: com.example.debugassistant, PID: 12345
+java.lang.NullPointerException: Attempt to invoke virtual method on a null object reference
+    at com.example.mapper.UserMapper.toDisplayName(UserMapper.kt:24)
+    at com.example.repository.UserRepository.getProfile(UserRepository.kt:18)
+    at com.example.ui.profile.ProfileScreen.loadUser(ProfileScreen.kt:56)

@@ -1,0 +1,10 @@
+{
+  "issueId": "ISSUE-101",
+  "title": "App crashes when opening user profile",
+  "description": "Crash happens for users whose profile name is missing",
+  "expectedRootCause": "NullPointerException caused by force-unwrapping nullable profile name",
+  "relevantFiles": ["UserMapper.kt", "UserRepository.kt"],
+  "suggestedFix": "Replace force unwrap with null-safe fallback",
+  "patchSuggestion": "displayName = dto.name ?: \"Unknown User\"",
+  "confidence": "High"
+}
