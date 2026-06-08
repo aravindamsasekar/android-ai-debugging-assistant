@@ -1,8 +1,9 @@
 """Android AI Debugging Assistant — backend skeleton.
 
 The Android app sends an issue ID; this API loads mock issue data and crash logs,
-parses stack traces, then returns root-cause analysis and fix suggestions. Code
-retrieval (FAISS) and LLM analysis are planned for later phases.
+parses stack traces, retrieves relevant Kotlin files, then returns root-cause
+analysis and fix suggestions. Semantic search (FAISS/embeddings) and LLM analysis
+are planned for later phases.
 """
 
 import json
@@ -11,6 +12,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from services.code_retriever import retrieve_relevant_code
 from services.log_parser import parse_log
 
 app = FastAPI(
@@ -47,7 +49,7 @@ def health_check() -> HealthResponse:
 # Future architecture (not implemented yet):
 # 1. Receive issue_id from the Android app
 # 2. Fetch issue context (description, crash log, screenshot summary)
-# 3. Retrieve relevant Kotlin files (future: FAISS / embeddings)
+# 3. Retrieve relevant Kotlin files (exact match done; FAISS / embeddings future)
 # 4. Analyze with an LLM (OpenAI / Gemini)
 # 5. Return a structured AnalyzeResponse
 
@@ -80,6 +82,13 @@ def _build_analyze_response(issue: dict, log_text: str) -> AnalyzeResponse:
 
     if parsed["importantLine"]:
         evidence.append(parsed["importantLine"])
+
+    retrieved_code = retrieve_relevant_code(
+        crash_file=parsed["crashFile"],
+        relevant_files=issue["relevantFiles"],
+    )
+    for item in retrieved_code:
+        evidence.append(f"Retrieved code: {item['file']}")
 
     return AnalyzeResponse(
         issue_id=issue_id,
