@@ -1,8 +1,8 @@
 """Android AI Debugging Assistant — backend skeleton.
 
 The Android app sends an issue ID; this API loads mock issue data and crash logs,
-then returns root-cause analysis and fix suggestions. Real log parsing, code
-retrieval, and LLM analysis are planned for later phases.
+parses stack traces, then returns root-cause analysis and fix suggestions. Code
+retrieval (FAISS) and LLM analysis are planned for later phases.
 """
 
 import json
@@ -10,6 +10,8 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+from services.log_parser import parse_log
 
 app = FastAPI(
     title="Android AI Debugging Assistant Backend",
@@ -19,8 +21,6 @@ app = FastAPI(
 BASE_DIR = Path(__file__).parent
 ISSUES_DIR = BASE_DIR / "mock_data" / "issues"
 LOGS_DIR = BASE_DIR / "mock_data" / "logs"
-
-_LOG_KEYWORDS = ("Exception", "Caused by", "FATAL", "Error")
 
 
 class HealthResponse(BaseModel):
@@ -66,28 +66,25 @@ def _load_log(issue_id: str) -> str:
     return log_path.read_text(encoding="utf-8")
 
 
-def _first_important_log_line(log_text: str) -> str:
-    """Return the first log line containing a crash-relevant keyword."""
-    for line in log_text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if any(keyword in stripped for keyword in _LOG_KEYWORDS):
-            return stripped
-    lines = [line.strip() for line in log_text.splitlines() if line.strip()]
-    return lines[0] if lines else "No log content"
-
-
 def _build_analyze_response(issue: dict, log_text: str) -> AnalyzeResponse:
     issue_id = issue["issueId"]
+    parsed = parse_log(log_text)
+
+    evidence = [issue["title"]]
+
+    if parsed["exceptionType"]:
+        evidence.append(f"Exception: {parsed['exceptionType']}")
+
+    if parsed["crashFile"] and parsed["crashLine"] is not None:
+        evidence.append(f"Crash location: {parsed['crashFile']}:{parsed['crashLine']}")
+
+    if parsed["importantLine"]:
+        evidence.append(parsed["importantLine"])
+
     return AnalyzeResponse(
         issue_id=issue_id,
         root_cause=issue["expectedRootCause"],
-        evidence=[
-            issue["title"],
-            _first_important_log_line(log_text),
-            f"Crash log: mock_data/logs/{issue_id}.log",
-        ],
+        evidence=evidence,
         relevant_files=issue["relevantFiles"],
         suggested_fix=issue["suggestedFix"],
         patch_suggestion=issue["patchSuggestion"],
