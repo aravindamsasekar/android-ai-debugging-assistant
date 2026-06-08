@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -27,6 +29,7 @@ fun DebugAssistantScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
         Text(
@@ -69,15 +72,59 @@ fun DebugAssistantScreen(
 
         uiState.analysis?.let { analysis ->
             Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "Root Cause",
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            SectionTitle("Root Cause")
             Text(
                 text = analysis.rootCause,
                 style = MaterialTheme.typography.bodyLarge,
             )
+
+            Spacer(modifier = Modifier.height(16.dp))
+            SectionTitle("Evidence")
+            BulletList(analysis.evidence)
+
+            Spacer(modifier = Modifier.height(16.dp))
+            SectionTitle("Relevant Files")
+            BulletList(analysis.relevantFiles)
+
+            Spacer(modifier = Modifier.height(16.dp))
+            SectionTitle("Suggested Fix")
+            Text(
+                text = analysis.suggestedFix,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+            SectionTitle("Patch Suggestion")
+            Text(
+                text = analysis.patchSuggestion,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+            SectionTitle("Confidence")
+            Text(
+                text = analysis.confidence,
+                style = MaterialTheme.typography.bodyLarge,
+            )
         }
+    }
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleMedium,
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+}
+
+@Composable
+private fun BulletList(items: List<String>) {
+    items.forEach { item ->
+        Text(
+            text = "• $item",
+            style = MaterialTheme.typography.bodyLarge,
+        )
     }
 }
