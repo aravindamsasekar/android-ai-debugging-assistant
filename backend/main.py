@@ -1,9 +1,9 @@
-"""Android AI Debugging Assistant — backend skeleton.
+"""Android AI Debugging Assistant backend.
 
 The Android app sends an issue ID; this API loads mock issue data and crash logs,
-parses stack traces, retrieves relevant Kotlin files, then returns root-cause
-analysis and fix suggestions. Semantic search (FAISS/embeddings) and LLM analysis
-are planned for later phases.
+runs hybrid retrieval (exact + FAISS semantic search), then uses LLM orchestration
+to return root-cause analysis and fix suggestions. Mock issue JSON remains the
+issue source and the fallback source when the LLM is unavailable.
 """
 
 import json
@@ -12,7 +12,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from services.code_retriever import retrieve_relevant_code
+from services.hybrid_retriever import hybrid_retrieve
+from services.llm_orchestrator import analyze_with_llm
 from services.log_parser import parse_log
 
 app = FastAPI(
@@ -55,14 +56,6 @@ def health_check() -> HealthResponse:
     return HealthResponse(status="ok", message="Backend is running")
 
 
-# Future architecture (not implemented yet):
-# 1. Receive issue_id from the Android app
-# 2. Fetch issue context (description, crash log, screenshot summary)
-# 3. Retrieve relevant Kotlin files (exact match done; FAISS / embeddings future)
-# 4. Analyze with an LLM (OpenAI / Gemini)
-# 5. Return a structured AnalyzeResponse
-
-
 def _load_issue(issue_id: str) -> dict:
     issue_path = ISSUES_DIR / f"{issue_id}.json"
     if not issue_path.is_file():
@@ -81,45 +74,30 @@ def _build_analyze_response(issue: dict, log_text: str) -> AnalyzeResponse:
     issue_id = issue["issueId"]
     parsed = parse_log(log_text)
 
-    evidence = [issue["title"]]
-
-    if parsed["exceptionType"]:
-        evidence.append(f"Exception: {parsed['exceptionType']}")
-
-    if parsed["crashFile"] and parsed["crashLine"] is not None:
-        evidence.append(f"Crash location: {parsed['crashFile']}:{parsed['crashLine']}")
-
-    if parsed["importantLine"]:
-        evidence.append(parsed["importantLine"])
-
-    retrieved_code = retrieve_relevant_code(
-        crash_file=parsed["crashFile"],
-        relevant_files=issue["relevantFiles"],
-        crash_line=parsed["crashLine"],
-    )
-    for item in retrieved_code:
-        evidence.append(f"Retrieved code: {item['file']}")
+    retrieval_results = hybrid_retrieve(issue, parsed, top_k=5)
+    analysis = analyze_with_llm(issue, parsed, retrieval_results)
 
     relevant_code = [
-        CodeSnippet(file=item["file"], snippet=item["snippet"])
-        for item in retrieved_code
+        CodeSnippet(file=item["file"], snippet=item["content"])
+        for item in retrieval_results[:5]
+        if item.get("content")
     ]
 
     return AnalyzeResponse(
         issue_id=issue_id,
-        root_cause=issue["expectedRootCause"],
-        evidence=evidence,
+        root_cause=analysis["rootCause"],
+        evidence=analysis["evidence"],
         relevant_files=issue["relevantFiles"],
         relevant_code=relevant_code,
-        suggested_fix=issue["suggestedFix"],
-        patch_suggestion=issue["patchSuggestion"],
-        confidence=issue["confidence"],
+        suggested_fix=analysis["suggestedFix"],
+        patch_suggestion=analysis["patchSuggestion"],
+        confidence=analysis["confidence"],
     )
 
 
 @app.get("/analyze/{issue_id}", response_model=AnalyzeResponse)
 def analyze_issue(issue_id: str) -> AnalyzeResponse:
-    """Load issue-specific mock data from JSON and log files."""
+    """Load mock issue/log data, run hybrid retrieval + LLM analysis, return results."""
     issue = _load_issue(issue_id)
     log_text = _load_log(issue_id)
     return _build_analyze_response(issue, log_text)
