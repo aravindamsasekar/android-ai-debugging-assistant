@@ -99,7 +99,7 @@ fun DebugAssistantScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = codeSnippet.snippet,
+                        text = formatHighlightedSnippet(codeSnippet.snippet),
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
                     )
@@ -149,3 +149,19 @@ private fun BulletList(items: List<String>) {
         )
     }
 }
+
+private val BUG_LINE_INDICATORS = listOf(
+    "!!",
+    "Intentional bug",
+    "addMigrations",
+    "SocketTimeoutException",
+)
+
+private fun isBugIndicatorLine(line: String): Boolean =
+    BUG_LINE_INDICATORS.any { indicator -> line.contains(indicator) }
+
+private fun formatHighlightedSnippet(snippet: String): String =
+    snippet.lineSequence()
+        .joinToString("\n") { line ->
+            if (isBugIndicatorLine(line)) ">>> $line" else line
+        }
