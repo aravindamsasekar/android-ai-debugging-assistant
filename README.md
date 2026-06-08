@@ -24,16 +24,65 @@ If the LLM is unavailable (missing API key, network error, invalid JSON), the ba
 
 ## Architecture
 
+End-to-end request flow:
+
 ```
-┌─────────────────────┐         HTTP GET          ┌──────────────────────────────┐
-│   Android App       │  /analyze/{issue_id}      │   FastAPI Backend            │
-│   (Jetpack Compose) │ ────────────────────────► │                              │
-│                     │                           │  1. Load mock issue + log    │
-│  MVVM + Clean Arch  │ ◄──────────────────────── │  2. parse_log()              │
-└─────────────────────┘    AnalyzeResponse JSON   │  3. hybrid_retrieve()        │
-                                                  │  4. analyze_with_llm()       │
-                                                  └──────────────────────────────┘
+Android App
+    ↓
+Compose UI
+    ↓
+ViewModel + StateFlow
+    ↓
+Repository + Retrofit
+    ↓
+FastAPI /analyze/{issueId}
+    ↓
+Issue JSON + Crash Log
+    ↓
+Log Parser
+    ↓
+Hybrid Retrieval
+    ├── Exact Retrieval from crash file / relevant files
+    └── FAISS HNSW Semantic Search over code chunks
+    ↓
+OpenAI gpt-4.1-mini LLM Orchestrator
+    ↓
+Root Cause + Evidence + Suggested Fix + Patch
+    ↓
+Android Result Screen
 ```
+
+### Key backend components
+
+| Component | File | Role |
+|-----------|------|------|
+| API entrypoint | `main.py` | Loads mock data, orchestrates pipeline, returns `AnalyzeResponse` |
+| Log parser | `services/log_parser.py` | Extracts exception, crash file/line, important log line |
+| Code chunker | `services/code_chunker.py` | Splits sample Kotlin files into symbol-level chunks |
+| Embedding service | `services/embedding_service.py` | Generates 384-dim vectors (`all-MiniLM-L6-v2`) |
+| FAISS service | `services/faiss_service.py` | HNSW index build, load, and semantic search |
+| Hybrid retriever | `services/hybrid_retriever.py` | Merges exact + semantic retrieval results |
+| LLM orchestrator | `services/llm_orchestrator.py` | Builds prompt, calls OpenAI, parses JSON, fallback |
+| Mock data | `mock_data/issues/`, `mock_data/logs/` | Demo issue metadata and crash logs |
+| Sample codebase | `sample_codebase/` | Kotlin files with intentional bugs for retrieval |
+| Vector store | `vector_store/` | Precomputed embeddings and FAISS index |
+
+### Key Android components
+
+| Layer | Components | Role |
+|-------|------------|------|
+| Presentation | `DebugAssistantScreen`, `DebugAssistantViewModel`, `DebugAssistantUiState` | UI, state, user actions |
+| Domain | `AnalyzeIssueUseCase`, `DebugAnalysis`, `DebugRepository` | Business logic and models |
+| Data | `DebugApiService`, `RetrofitClient`, `DebugRepositoryImpl`, `AnalyzeResponseDto` | HTTP client and DTO mapping |
+| Wiring | `MainActivity` | Manual DI: repository → use case → view model |
+
+### Demo issue IDs
+
+| Issue ID | Scenario |
+|----------|----------|
+| `ISSUE-101` | Profile crash — `NullPointerException` from force-unwrapping nullable name |
+| `ISSUE-102` | Login timeout — `SocketTimeoutException` not mapped to UI error state |
+| `ISSUE-103` | DB upgrade crash — Room version change without migration |
 
 ### Repository layout
 
@@ -150,21 +199,6 @@ Results are deduplicated, exact matches are kept first, semantic matches follow 
 - Prompt includes issue metadata, parsed log fields, and retrieved code blocks
 - Returns JSON: `rootCause`, `evidence`, `suggestedFix`, `patchSuggestion`, `confidence`
 - On failure, returns mock issue fields via `build_fallback_analysis()`
-
----
-
-## Demo Issue IDs
-
-| Issue ID | Scenario | Sample crash / bug theme |
-|----------|----------|--------------------------|
-| `ISSUE-101` | Profile screen crash | `NullPointerException` from force-unwrapping nullable name in `UserMapper.kt` |
-| `ISSUE-102` | Slow network login | `SocketTimeoutException` not mapped to user-friendly UI state |
-| `ISSUE-103` | Post-upgrade crash | Room database version change without migration |
-
-Mock data lives in:
-
-- `backend/mock_data/issues/ISSUE-*.json`
-- `backend/mock_data/logs/ISSUE-*.log`
 
 ---
 
