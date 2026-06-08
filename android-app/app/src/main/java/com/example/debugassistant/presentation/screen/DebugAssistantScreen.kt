@@ -15,6 +15,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.debugassistant.presentation.viewmodel.DebugAssistantViewModel
@@ -85,6 +87,25 @@ fun DebugAssistantScreen(
             Spacer(modifier = Modifier.height(16.dp))
             SectionTitle("Relevant Files")
             BulletList(analysis.relevantFiles)
+
+            if (analysis.relevantCode.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                SectionTitle("Relevant Code")
+                analysis.relevantCode.forEach { codeSnippet ->
+                    Text(
+                        text = "File: ${codeSnippet.file}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = codeSnippet.snippet,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
             SectionTitle("Suggested Fix")

@@ -2,6 +2,7 @@ package com.example.debugassistant.data.repository
 
 import com.example.debugassistant.data.model.AnalyzeResponseDto
 import com.example.debugassistant.data.remote.DebugApiService
+import com.example.debugassistant.domain.model.CodeSnippet
 import com.example.debugassistant.domain.model.DebugAnalysis
 import com.example.debugassistant.domain.repository.DebugRepository
 
@@ -21,6 +22,7 @@ private fun AnalyzeResponseDto.toDomain(): DebugAnalysis = DebugAnalysis(
     rootCause = rootCause,
     evidence = evidence,
     relevantFiles = relevantFiles,
+    relevantCode = relevantCode.map { CodeSnippet(file = it.file, snippet = it.snippet) },
     suggestedFix = suggestedFix,
     patchSuggestion = patchSuggestion,
     confidence = confidence,

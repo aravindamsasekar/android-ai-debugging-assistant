@@ -30,11 +30,20 @@ class HealthResponse(BaseModel):
     message: str
 
 
+class CodeSnippet(BaseModel):
+    file: str
+    snippet: str
+
+
 class AnalyzeResponse(BaseModel):
     issue_id: str = Field(serialization_alias="issueId")
     root_cause: str = Field(serialization_alias="rootCause")
     evidence: list[str]
     relevant_files: list[str] = Field(serialization_alias="relevantFiles")
+    relevant_code: list[CodeSnippet] = Field(
+        serialization_alias="relevantCode",
+        default_factory=list,
+    )
     suggested_fix: str = Field(serialization_alias="suggestedFix")
     patch_suggestion: str = Field(serialization_alias="patchSuggestion")
     confidence: str
@@ -86,15 +95,22 @@ def _build_analyze_response(issue: dict, log_text: str) -> AnalyzeResponse:
     retrieved_code = retrieve_relevant_code(
         crash_file=parsed["crashFile"],
         relevant_files=issue["relevantFiles"],
+        crash_line=parsed["crashLine"],
     )
     for item in retrieved_code:
         evidence.append(f"Retrieved code: {item['file']}")
+
+    relevant_code = [
+        CodeSnippet(file=item["file"], snippet=item["snippet"])
+        for item in retrieved_code
+    ]
 
     return AnalyzeResponse(
         issue_id=issue_id,
         root_cause=issue["expectedRootCause"],
         evidence=evidence,
         relevant_files=issue["relevantFiles"],
+        relevant_code=relevant_code,
         suggested_fix=issue["suggestedFix"],
         patch_suggestion=issue["patchSuggestion"],
         confidence=issue["confidence"],
