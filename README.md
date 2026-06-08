@@ -1,49 +1,59 @@
 # Android AI Debugging Assistant
 
-An end-to-end prototype that helps Android developers investigate crashes by combining crash-log parsing, Kotlin code retrieval, semantic search, and LLM-generated analysis.
+A full-stack prototype that investigates Android crashes by combining structured log parsing, hybrid code retrieval (exact + semantic), and LLM-generated root-cause analysis.
 
-The Android app sends an **issue ID** to a FastAPI backend. The backend loads mock issue metadata and crash logs, retrieves relevant Kotlin code, and returns structured debugging output: root cause, evidence, relevant code snippets, suggested fix, patch suggestion, and confidence.
-
-> **Scope note:** This project uses a **sample Kotlin codebase** and **mock issue/log files** for demonstration. It is not connected to a live crash reporting system (Firebase Crashlytics, Sentry, etc.) or a production app repository.
+> **Demo scope:** This project uses a **bundled sample Kotlin codebase** and **mock issue/log files**. It is not connected to live crash reporting (Crashlytics, Sentry, etc.) or a production repository. Suitable for learning, demos, and portfolio use — not production deployment as-is.
 
 ---
 
-## What It Does
+## Problem Statement
 
-Given an issue such as `ISSUE-101`, the system:
+When an Android app crashes, developers must correlate stack traces, issue context, and source code to find the root cause. That workflow is repetitive and time-consuming, especially when:
 
-1. Loads issue context (title, description, relevant files) and a crash log
-2. Parses the stack trace for exception type, crash file, and line number
-3. Retrieves code using **exact file matching** and **FAISS semantic search**
-4. Sends retrieved context to **OpenAI `gpt-4.1-mini`** for analysis
-5. Returns a structured JSON response displayed in the Android UI
+- The failing line is clear, but related code (mappers, repositories, data models) is spread across multiple files
+- Stack traces alone do not surface all semantically related symbols
+- Manual triage does not scale as issue volume grows
 
-If the LLM is unavailable (missing API key, network error, invalid JSON), the backend falls back to deterministic values from the mock issue JSON.
+This prototype explores whether a **retrieval-augmented** pipeline — parse the log, retrieve relevant Kotlin code, then reason with an LLM — can produce useful debugging output from a simple issue ID.
 
 ---
 
-## Architecture
+## What the App Does
 
-End-to-end request flow:
+1. User enters a demo issue ID (`ISSUE-101`, `ISSUE-102`, or `ISSUE-103`) in the Android app
+2. The app calls `GET /analyze/{issueId}` on the FastAPI backend
+3. The backend loads mock issue metadata and a crash log, parses the stack trace, retrieves Kotlin code, and asks **OpenAI `gpt-4.1-mini`** for analysis
+4. The app displays:
+   - Root cause
+   - Evidence
+   - Relevant files and code snippets (suspected bug lines prefixed with `>>> `)
+   - Suggested fix and patch suggestion
+   - Confidence level
+
+If the LLM is unavailable, the backend returns deterministic fallback values from the mock issue JSON.
+
+---
+
+## End-to-End Architecture
 
 ```
 Android App
     ↓
-Compose UI
+Jetpack Compose UI
     ↓
 ViewModel + StateFlow
     ↓
 Repository + Retrofit
     ↓
-FastAPI /analyze/{issueId}
+FastAPI  GET /analyze/{issueId}
     ↓
 Issue JSON + Crash Log
     ↓
 Log Parser
     ↓
 Hybrid Retrieval
-    ├── Exact Retrieval from crash file / relevant files
-    └── FAISS HNSW Semantic Search over code chunks
+    ├── Exact retrieval (crash file + relevant files)
+    └── FAISS HNSW semantic search over code chunks
     ↓
 OpenAI gpt-4.1-mini LLM Orchestrator
     ↓
@@ -52,38 +62,6 @@ Root Cause + Evidence + Suggested Fix + Patch
 Android Result Screen
 ```
 
-### Key backend components
-
-| Component | File | Role |
-|-----------|------|------|
-| API entrypoint | `main.py` | Loads mock data, orchestrates pipeline, returns `AnalyzeResponse` |
-| Log parser | `services/log_parser.py` | Extracts exception, crash file/line, important log line |
-| Code chunker | `services/code_chunker.py` | Splits sample Kotlin files into symbol-level chunks |
-| Embedding service | `services/embedding_service.py` | Generates 384-dim vectors (`all-MiniLM-L6-v2`) |
-| FAISS service | `services/faiss_service.py` | HNSW index build, load, and semantic search |
-| Hybrid retriever | `services/hybrid_retriever.py` | Merges exact + semantic retrieval results |
-| LLM orchestrator | `services/llm_orchestrator.py` | Builds prompt, calls OpenAI, parses JSON, fallback |
-| Mock data | `mock_data/issues/`, `mock_data/logs/` | Demo issue metadata and crash logs |
-| Sample codebase | `sample_codebase/` | Kotlin files with intentional bugs for retrieval |
-| Vector store | `vector_store/` | Precomputed embeddings and FAISS index |
-
-### Key Android components
-
-| Layer | Components | Role |
-|-------|------------|------|
-| Presentation | `DebugAssistantScreen`, `DebugAssistantViewModel`, `DebugAssistantUiState` | UI, state, user actions |
-| Domain | `AnalyzeIssueUseCase`, `DebugAnalysis`, `DebugRepository` | Business logic and models |
-| Data | `DebugApiService`, `RetrofitClient`, `DebugRepositoryImpl`, `AnalyzeResponseDto` | HTTP client and DTO mapping |
-| Wiring | `MainActivity` | Manual DI: repository → use case → view model |
-
-### Demo issue IDs
-
-| Issue ID | Scenario |
-|----------|----------|
-| `ISSUE-101` | Profile crash — `NullPointerException` from force-unwrapping nullable name |
-| `ISSUE-102` | Login timeout — `SocketTimeoutException` not mapped to UI error state |
-| `ISSUE-103` | DB upgrade crash — Room version change without migration |
-
 ### Repository layout
 
 | Path | Purpose |
@@ -91,145 +69,143 @@ Android Result Screen
 | `android-app/` | Jetpack Compose client (MVVM + Clean Architecture) |
 | `backend/` | FastAPI API and analysis pipeline |
 | `backend/services/` | Log parsing, retrieval, embeddings, FAISS, LLM orchestration |
-| `backend/mock_data/` | Demo issue JSON files and crash logs |
+| `backend/mock_data/` | Demo issue JSON and crash logs |
 | `backend/sample_codebase/` | Sample Kotlin files with intentional bugs |
 | `backend/vector_store/` | Precomputed embeddings and FAISS index |
 
 ---
 
-## Android App Flow
+## AI / RAG Pipeline
 
-**Stack:** Kotlin, Jetpack Compose, MVVM, Retrofit, Gson, Coroutines, StateFlow
+The backend implements a retrieval-augmented generation (RAG) flow over a fixed sample codebase.
 
-1. User enters an issue ID (e.g. `ISSUE-101`) and taps **Analyze**
-2. `DebugAssistantViewModel` calls `AnalyzeIssueUseCase`
-3. `DebugRepositoryImpl` requests `GET /analyze/{issueId}` via Retrofit
-4. Response is mapped to domain models and shown in `DebugAssistantScreen`
+### 1. Log Parser (`services/log_parser.py`)
 
-**Layers:**
+Extracts structured fields from Android crash logs:
 
-- **Presentation:** `DebugAssistantScreen`, `DebugAssistantViewModel`, `DebugAssistantUiState`
-- **Domain:** `AnalyzeIssueUseCase`, `DebugAnalysis`, `DebugRepository`
-- **Data:** `DebugApiService`, `RetrofitClient`, `AnalyzeResponseDto`, `DebugRepositoryImpl`
+| Field | Description |
+|-------|-------------|
+| `exceptionType` | e.g. `NullPointerException`, `SocketTimeoutException`, `IllegalStateException` |
+| `crashFile` / `crashLine` | From `com.example.*` stack frames when present |
+| `importantLine` | First line matching crash keywords (`FATAL`, `Exception`, etc.) |
 
-**Dependency injection:** Manual wiring in `MainActivity` (no Hilt/Koin).
+### 2. Exact Retrieval (`services/code_retriever.py`)
 
-**Relevant Code UI:** Suspected bug lines (e.g. containing `!!`, `Intentional bug`) are prefixed with `>>> ` in monospace for easier scanning.
+Loads Kotlin files from `sample_codebase/` by:
+
+- Crash file from the stack trace (with line-context snippet)
+- Files listed in issue `relevantFiles`
+
+Provides high-trust, file-level anchors for the crash site.
+
+### 3. Code Chunking (`services/code_chunker.py`)
+
+Splits Kotlin sources into symbol-level chunks (`class`, `function`, `data class`, etc.). Large symbols are windowed with overlap. Each chunk carries `chunkId`, `file`, `symbol`, line range, and `content`.
+
+### 4. Embeddings (`services/embedding_service.py`)
+
+- Model: `sentence-transformers/all-MiniLM-L6-v2` (384-dimensional vectors)
+- Output: `vector_store/chunks_with_embeddings.json`
+- Chunk metadata is preserved for citation in retrieval results
+
+### 5. FAISS HNSW Semantic Search (`services/faiss_service.py`)
+
+- Index: `IndexHNSWFlat` (`M=32`, `efConstruction=40`, `efSearch=32`)
+- Persisted at `vector_store/code_chunks.faiss`
+- Query-time comparison via L2 distance (lower = closer semantic match)
+
+### 6. Hybrid Retrieval + Ranking (`services/hybrid_retriever.py`)
+
+Merges exact and semantic results:
+
+| Strategy | Role |
+|----------|------|
+| **Exact** | Crash file and `relevantFiles` first — highest trust |
+| **Semantic** | FAISS nearest-neighbor over embedded chunks |
+
+**Ranking improvements:**
+
+- Raw FAISS `score` = semantic distance (lower is better)
+- `adjustedScore` applies debugging boosts: crash file (−0.30), relevant file (−0.20), symbol mentioned in issue text (−0.10)
+- Weak unrelated matches (not crash/relevant file, distance > 1.35) are filtered out
+- Exact file-level and semantic symbol-level results can coexist; exact wins on dedupe
+
+### 7. OpenAI LLM Orchestration (`services/llm_orchestrator.py`)
+
+- Model: `gpt-4.1-mini`, temperature `0.2`
+- Primary: OpenAI **Responses API**; fallback: Chat Completions
+- Prompt includes issue metadata, parsed log, and retrieved code blocks
+- Returns JSON: `rootCause`, `evidence`, `suggestedFix`, `patchSuggestion`, `confidence`
+- On API/parse failure: `build_fallback_analysis()` using mock issue fields
 
 ---
 
-## Backend Flow
+## Android Architecture
 
-**Endpoint:** `GET /analyze/{issue_id}`
+**Stack:** Kotlin, Jetpack Compose, MVVM, Retrofit, Gson, Coroutines, StateFlow
+
+| Layer | Key files | Responsibility |
+|-------|-----------|----------------|
+| Presentation | `DebugAssistantScreen`, `DebugAssistantViewModel`, `DebugAssistantUiState` | UI, loading/error state, user input |
+| Domain | `AnalyzeIssueUseCase`, `DebugAnalysis`, `DebugRepository` | Business logic, domain models |
+| Data | `DebugApiService`, `RetrofitClient`, `DebugRepositoryImpl`, `AnalyzeResponseDto` | HTTP calls, DTO mapping |
+| Wiring | `MainActivity` | Manual DI: repository → use case → view model |
+
+**Flow:** User taps Analyze → ViewModel invokes use case → Retrofit calls `/analyze/{issueId}` → response mapped to domain model → Compose screen renders sections.
+
+**Relevant Code UI:** Lines containing bug indicators (`!!`, `Intentional bug`, `addMigrations`, `SocketTimeoutException`) are prefixed with `>>> ` in monospace.
+
+---
+
+## Backend Architecture
+
+**Stack:** FastAPI, Uvicorn, Pydantic, python-dotenv, OpenAI Python SDK
+
+| Component | File | Role |
+|-----------|------|------|
+| API entrypoint | `main.py` | `GET /health`, `GET /analyze/{issue_id}` |
+| Log parser | `services/log_parser.py` | Stack trace extraction |
+| Code retriever | `services/code_retriever.py` | Exact file/snippet loading |
+| Code chunker | `services/code_chunker.py` | Kotlin symbol chunking |
+| Embedding service | `services/embedding_service.py` | Vector generation |
+| FAISS service | `services/faiss_service.py` | Index build/load/search |
+| Hybrid retriever | `services/hybrid_retriever.py` | Merge, rank, cap results |
+| LLM orchestrator | `services/llm_orchestrator.py` | Prompt, OpenAI call, JSON parse, fallback |
+
+**`/analyze/{issue_id}` pipeline:**
 
 ```
-issue JSON + crash log
-        │
-        ▼
-   parse_log()
-        │
-        ▼
- hybrid_retrieve(top_k=5)
-   ├── exact retrieval (crash file + relevant files)
-   └── FAISS semantic search
-        │
-        ▼
- analyze_with_llm()
-   ├── build context + prompt
-   ├── OpenAI Responses API (gpt-4.1-mini)
-   └── parse JSON (fallback on failure)
-        │
-        ▼
-   AnalyzeResponse
+_load_issue() + _load_log()
+    → parse_log()
+    → hybrid_retrieve(top_k=5)
+    → analyze_with_llm()
+    → AnalyzeResponse JSON
 ```
-
-**Other endpoint:** `GET /health` — liveness check
 
 **Response fields:** `issueId`, `rootCause`, `evidence`, `relevantFiles`, `relevantCode`, `suggestedFix`, `patchSuggestion`, `confidence`
 
 ---
 
-## Pipeline Components
+## Demo Issue IDs
 
-### Log Parser (`services/log_parser.py`)
+| Issue ID | Scenario | Bug theme |
+|----------|----------|-----------|
+| `ISSUE-101` | Profile screen crash | `NullPointerException` — force-unwrapping nullable name in `UserMapper.kt` |
+| `ISSUE-102` | Slow-network login | `SocketTimeoutException` not mapped to user-friendly UI state |
+| `ISSUE-103` | Post-upgrade crash | Room database version change without migration |
 
-Extracts structured fields from Android crash logs:
-
-- `exceptionType` — e.g. `NullPointerException`, `SocketTimeoutException`, `IllegalStateException`
-- `crashFile` / `crashLine` — from `com.example.*` stack frames when present
-- `importantLine` — first line containing crash-relevant keywords (`FATAL`, `Exception`, etc.)
-
-### Code Chunking (`services/code_chunker.py`)
-
-Splits Kotlin files in `sample_codebase/` into symbol-level chunks:
-
-- Targets: `data class`, `class`, `object`, `interface`, `function`
-- Large chunks are split into overlapping windows
-- Output metadata: `chunkId`, `file`, `type`, `symbol`, `startLine`, `endLine`, `content`
-
-### Embeddings (`services/embedding_service.py`)
-
-- Model: `sentence-transformers/all-MiniLM-L6-v2` (384-dimensional vectors)
-- Embeds code chunks and stores them in `vector_store/chunks_with_embeddings.json`
-- Metadata is preserved alongside each embedding for citation in retrieval results
-
-### FAISS HNSW Semantic Search (`services/faiss_service.py`)
-
-- Index type: `IndexHNSWFlat` (approximate nearest-neighbor search)
-- Parameters: `M=32`, `efConstruction=40`, `efSearch=32`
-- Persists index to `vector_store/code_chunks.faiss`
-- Query embeddings are compared via L2 distance (lower = closer match)
-
-### Hybrid Retrieval (`services/hybrid_retriever.py`)
-
-Combines two strategies:
-
-| Source | Strength |
-|--------|----------|
-| **Exact** | Anchors on crash file from stack trace and issue `relevantFiles` |
-| **Semantic** | Finds related symbols by meaning (e.g. nullable name handling) |
-
-Results are deduplicated, exact matches are kept first, semantic matches follow sorted by score, capped at `top_k`.
-
-### OpenAI LLM Orchestration (`services/llm_orchestrator.py`)
-
-- Model: `gpt-4.1-mini`, temperature `0.2`
-- Primary API: OpenAI **Responses API** (`client.responses.create`)
-- Fallback API: Chat Completions if Responses API fails
-- Prompt includes issue metadata, parsed log fields, and retrieved code blocks
-- Returns JSON: `rootCause`, `evidence`, `suggestedFix`, `patchSuggestion`, `confidence`
-- On failure, returns mock issue fields via `build_fallback_analysis()`
+Mock data: `backend/mock_data/issues/ISSUE-*.json`, `backend/mock_data/logs/ISSUE-*.log`
 
 ---
 
-## Screenshots
-
-<!-- Add screenshots after running the demo -->
-
-| Home / Analyze | Analysis Result |
-|----------------|-----------------|
-| _Screenshot placeholder_ | _Screenshot placeholder_ |
-
-_Suggested captures: issue ID input, root cause + evidence, relevant code with `>>> ` bug-line highlighting._
-
----
-
-## Setup
+## How to Run the Backend
 
 ### Prerequisites
 
-**Backend**
-
-- Python 3.12+ recommended (3.14 may work; use 3.12 if `sentence-transformers` install fails)
+- Python 3.12+ recommended (use 3.12 if `sentence-transformers` fails on newer Python)
 - OpenAI API key
 
-**Android**
-
-- Android Studio (recent version)
-- Physical device or emulator (API 26+)
-- Device/emulator must reach the backend host on your LAN
-
-### Backend setup
+### Setup
 
 ```bash
 cd backend
@@ -249,36 +225,14 @@ Create `backend/.env`:
 OPENAI_API_KEY=your_key_here
 ```
 
-**Vector store (if rebuilding from scratch):**
+Prebuilt vector artifacts are in `backend/vector_store/`. To rebuild:
 
 ```bash
-cd backend
 python -c "from services.embedding_service import build_embeddings_for_codebase; build_embeddings_for_codebase()"
 python -c "from services.faiss_service import build_and_save_faiss_index; build_and_save_faiss_index()"
 ```
 
-Prebuilt artifacts are already included in `backend/vector_store/` for the sample codebase.
-
-### Android setup
-
-1. Open `android-app/` in Android Studio
-2. Update the backend base URL in `RetrofitClient.kt` to your machine's LAN IP:
-
-```kotlin
-private const val BASE_URL = "http://<YOUR_LAN_IP>:8001/"
-```
-
-Example: `http://192.168.0.103:8001/`
-
-3. Ensure `INTERNET` permission and cleartext traffic are enabled (already configured in `AndroidManifest.xml` for local HTTP)
-
----
-
-## How to Run
-
-### Backend
-
-From `backend/`:
+### Start server
 
 ```bash
 uvicorn main:app --reload --host 0.0.0.0 --port 8001
@@ -293,28 +247,55 @@ curl http://127.0.0.1:8001/analyze/ISSUE-101
 
 OpenAPI docs: `http://127.0.0.1:8001/docs`
 
-> **Important:** Restart uvicorn after pulling backend changes. A stale process may serve outdated mock responses (missing `relevantCode` or LLM analysis).
+> Restart uvicorn after pulling code changes. A stale process may serve outdated responses.
 
-### Android app
+First `/analyze` request may take 20–30 seconds while embedding and FAISS models load.
+
+---
+
+## How to Run the Android App
+
+### Prerequisites
+
+- Android Studio (recent version)
+- Device or emulator (API 26+)
+- Backend reachable on your LAN
+
+### Setup
+
+1. Open `android-app/` in Android Studio
+2. Set your machine's LAN IP in `RetrofitClient.kt`:
+
+```kotlin
+private const val BASE_URL = "http://<YOUR_LAN_IP>:8001/"
+```
+
+3. `INTERNET` permission and cleartext HTTP are already configured for local dev
+
+### Run
 
 1. Start the backend on port `8001`
-2. Confirm the device can reach `http://<YOUR_LAN_IP>:8001/health`
-3. Run the app from Android Studio on a device or emulator
+2. Confirm `http://<YOUR_LAN_IP>:8001/health` responds from the device
+3. Run the app from Android Studio
 4. Enter `ISSUE-101`, `ISSUE-102`, or `ISSUE-103` and tap **Analyze**
 
-First analysis request may take 20–30 seconds while embedding and FAISS models warm up.
+---
+
+## Screenshots
+
+<!-- Add screenshots after running the demo -->
+
+| Analyze screen | Analysis result |
+|----------------|-----------------|
+| _Placeholder_ | _Placeholder_ |
 
 ---
 
 ## API Example
 
-**Request**
+**Request:** `GET /analyze/ISSUE-101`
 
-```
-GET /analyze/ISSUE-101
-```
-
-**Response (shape)**
+**Response shape:**
 
 ```json
 {
@@ -333,24 +314,39 @@ GET /analyze/ISSUE-101
 
 ---
 
+## Current Limitations
+
+- **Mock data only** — issue metadata and logs are static files, not live crash reports
+- **Fixed codebase** — retrieval searches `sample_codebase/`, not an arbitrary project repo
+- **Local dev API** — no authentication; HTTP cleartext for LAN testing
+- **Approximate search** — FAISS HNSW trades exact recall for speed
+- **LLM dependency** — output quality and availability depend on OpenAI API key and network
+- **Single-model stack** — one embedding model and one LLM; no evaluation harness or A/B testing
+- **Manual Android config** — backend IP is hardcoded in `RetrofitClient.kt`
+
+---
+
+## Future Improvements
+
+- Ingest real crash reports from Crashlytics, Sentry, or internal tooling
+- Index an actual app repository (Git integration, incremental re-indexing)
+- Richer ranking signals (crash-line proximity, recency, test coverage)
+- Streaming LLM responses and citation links to exact file/line
+- Authentication and HTTPS for non-local deployments
+- Hilt/DI on Android; configurable backend URL (build flavors)
+- Evaluation dataset with expected root causes and retrieval metrics
+- Support for additional exception types and multi-module codebases
+
+---
+
 ## Tech Stack
 
 | Layer | Technologies |
 |-------|----------------|
-| Android | Kotlin, Jetpack Compose, MVVM, Retrofit, Gson, Coroutines |
+| Android | Kotlin, Jetpack Compose, MVVM, Retrofit, Gson, Coroutines, StateFlow |
 | Backend | FastAPI, Uvicorn, Pydantic |
 | Retrieval | sentence-transformers, faiss-cpu |
 | LLM | OpenAI Python SDK (`gpt-4.1-mini`) |
-
----
-
-## Limitations
-
-- Issue and log data are **mock files**, not live crash reports
-- Code retrieval targets the **bundled sample codebase**, not an arbitrary Git repo
-- LLM output quality depends on retrieved context and API availability
-- Semantic search uses approximate HNSW indexing (trade-off: speed vs. exact recall)
-- No authentication on the API (local development only)
 
 ---
 
